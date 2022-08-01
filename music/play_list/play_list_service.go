@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// todo 需要实现“播放”逻辑，每一首曲子播放完后要更新playList的current
+// todo 需要实现“播放”逻辑，每一首曲子播放完后要更新playList的current，并且通知每一个client
 
 var (
 	songSearchFields = []string{"instance_id", "name", "artists", "length"}
@@ -132,6 +132,7 @@ func (s *service) SetNextPlay(ctx *gin.Context, userId string, songId string) ([
 			err1 := o.Conn().WriteMessage(protocol.Protocol{
 				Body: map[string]interface{}{
 					"key":   o.Key(),
+					"path":  PathSetNext,
 					"songs": result,
 				},
 			})
@@ -213,7 +214,8 @@ func (s *service) SetPause(ctx *gin.Context, userId string) error {
 	connPool.ForEach(func(o *wbsocket.Owner) error {
 		err := o.Conn().WriteMessage(protocol.Protocol{
 			Body: map[string]interface{}{
-				"key":   o.Key(),
+				"key":        o.Key(),
+				"path":       PathSetPause,
 				"playStatus": StatusPaused,
 			},
 		})
@@ -225,25 +227,39 @@ func (s *service) SetPause(ctx *gin.Context, userId string) error {
 func (s *service) StartPlay(ctx *gin.Context, userId string) (*music.Song, int, error) {
 	connPool := global.GetGlobalObject(global.KeyConnPool).(*wbsocket.Pool)
 
-	s.playList.StartPlay()
-	currentPlay, pos := s.playList.GetCurrentPlay()
+	var currentPlay *music.Song
+	var pos = -1
 
-	connPool.ForEach(func(o *wbsocket.Owner) error {
-		if o.Key() != userId {
-			err := o.Conn().WriteMessage(protocol.Protocol{
-				Body: map[string]interface{}{
-					"key":   o.Key(),
-					"playStatus": StatusPlaying,
-					"current": map[string]interface{}{
-						"instance_id": currentPlay.InstanceId,
-						"pos": pos,
-					},
-				},
-			})
-			return err
+	// todo 需要测试正确性
+	go func() {
+		for {
+			select {
+			case curPlaySong := <-s.playList.CurrentChan:
+				pos = s.playList.curPlaySong.Pos
+				if curPlaySong != nil && pos >= 0 {
+					connPool.ForEach(func(o *wbsocket.Owner) error {
+						err := o.Conn().WriteMessage(protocol.Protocol{
+							Body: map[string]interface{}{
+								"key":        o.Key(),
+								"path":       PathStartPlay,
+								"playStatus": StatusPlaying,
+								"current": map[string]interface{}{
+									"instance_id": currentPlay.InstanceId,
+									"pos":         pos,
+								},
+							},
+						})
+						return err
+					})
+				}
+			}
 		}
-		return nil
-	})
+	}()
+
+	s.playList.StartPlay()
+
+	s.logger.Debugf("current is %v, pos = %d", currentPlay, pos)
+
 	return currentPlay, pos, nil
 }
 

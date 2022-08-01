@@ -1,17 +1,16 @@
-package play_list_v2
+package play_list
 
 import (
 	"share_song/global"
 	logger2 "share_song/logger"
-	"share_song/music/play_list"
 	"share_song/protocol"
 )
 
 const (
 	PathCurrentList string = "/play_list_v2/api/v1/current_list"
-	PathSetNext string = "/play_list_v2/api/v1/set_next"
-	PathStartPlay string = "/play_list_v2/api/v1/start_play"
-	PathSetPause string = "/play_list_v2/api/v1/set_pause"
+	PathSetNext     string = "/play_list_v2/api/v1/set_next"
+	PathStartPlay   string = "/play_list_v2/api/v1/start_play"
+	PathSetPause    string = "/play_list_v2/api/v1/set_pause"
 )
 
 func Register(dispatcher *protocol.Dispatcher) {
@@ -22,7 +21,7 @@ func Register(dispatcher *protocol.Dispatcher) {
 }
 
 func StartPlay(pro *protocol.Protocol) (map[string]interface{}, error) {
-	playListService := global.GetGlobalObject(global.KeyPlayListService).(play_list.PlayerListService)
+	playListService := global.GetGlobalObject(global.KeyPlayListService).(PlayerListService)
 	logger := global.GetGlobalObject(global.KeyLogger).(*logger2.Logger)
 
 	userId := pro.Body["userId"].(string)
@@ -31,19 +30,26 @@ func StartPlay(pro *protocol.Protocol) (map[string]interface{}, error) {
 		logger.Sugared().Errorf("start play failed, err=%s", err)
 		return wrapperError(err)
 	} else {
+		var instanceId = ""
+		var actualPos = -1
+		if curPlaySong != nil {
+			instanceId = curPlaySong.InstanceId
+			actualPos = pos
+		}
 		return map[string]interface{}{
-			"key":   userId,
-			"playStatus": play_list.StatusPlaying,
+			"path":       PathStartPlay,
+			"key":        userId,
+			"playStatus": StatusPlaying,
 			"current": map[string]interface{}{
-				"instance_id": curPlaySong.InstanceId,
-				"pos": pos,
+				"instance_id": instanceId,
+				"pos":         actualPos,
 			},
 		}, nil
 	}
 }
 
 func SetNextPlay(pro *protocol.Protocol) (map[string]interface{}, error) {
-	playListService := global.GetGlobalObject(global.KeyPlayListService).(play_list.PlayerListService)
+	playListService := global.GetGlobalObject(global.KeyPlayListService).(PlayerListService)
 	logger := global.GetGlobalObject(global.KeyLogger).(*logger2.Logger)
 
 	userId := pro.Body["userId"].(string)
@@ -54,12 +60,14 @@ func SetNextPlay(pro *protocol.Protocol) (map[string]interface{}, error) {
 		return wrapperError(err)
 	}
 	return map[string]interface{}{
+		"path":  PathSetNext,
+		"key":   userId,
 		"songs": songs,
 	}, nil
 }
 
 func SetPause(pro *protocol.Protocol) (map[string]interface{}, error) {
-	playListService := global.GetGlobalObject(global.KeyPlayListService).(play_list.PlayerListService)
+	playListService := global.GetGlobalObject(global.KeyPlayListService).(PlayerListService)
 	logger := global.GetGlobalObject(global.KeyLogger).(*logger2.Logger)
 
 	userId := pro.Body["userId"].(string)
@@ -69,14 +77,15 @@ func SetPause(pro *protocol.Protocol) (map[string]interface{}, error) {
 		return wrapperError(err)
 	} else {
 		return map[string]interface{}{
-			"key":   userId,
-			"playStatus": play_list.StatusPaused,
+			"path":       PathSetPause,
+			"key":        userId,
+			"playStatus": StatusPaused,
 		}, nil
 	}
 }
 
 func GetCurrentList(pro *protocol.Protocol) (map[string]interface{}, error) {
-	playListService := global.GetGlobalObject(global.KeyPlayListService).(play_list.PlayerListService)
+	playListService := global.GetGlobalObject(global.KeyPlayListService).(PlayerListService)
 	logger := global.GetGlobalObject(global.KeyLogger).(*logger2.Logger)
 
 	userId := pro.Body["userId"].(string)
@@ -87,6 +96,7 @@ func GetCurrentList(pro *protocol.Protocol) (map[string]interface{}, error) {
 	}
 
 	return map[string]interface{}{
+		"path":  PathCurrentList,
 		"key":   userId,
 		"songs": songs,
 	}, nil

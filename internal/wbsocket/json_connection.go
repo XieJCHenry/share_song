@@ -73,6 +73,9 @@ func (c *Connection) WriteMessage(pro protocol.Protocol) error {
 
 func (c *Connection) readLoop() {
 	defer func() {
+		if err := recover(); err != nil {
+
+		}
 		c.Close()
 	}()
 
@@ -95,6 +98,9 @@ func (c *Connection) readLoop() {
 
 func (c *Connection) writeLoop() {
 	defer func() {
+		if err := recover(); err != nil {
+
+		}
 		c.Close()
 	}()
 

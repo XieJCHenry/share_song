@@ -3,9 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
-	"gorm.io/gorm"
 	mysql2 "share_song/database/mysql"
 	"share_song/global"
 	"share_song/hello"
@@ -13,9 +10,13 @@ import (
 	logger2 "share_song/logger"
 	"share_song/music/music_library"
 	"share_song/music/play_list"
-	"share_song/music/play_list_v2"
 	"share_song/protocol"
 	"share_song/user_v2"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -38,7 +39,7 @@ func main() {
 
 	routeDispatcher := protocol.NewDispatcher()
 	hello.Register(routeDispatcher)
-	play_list_v2.Register(routeDispatcher)
+	play_list.Register(routeDispatcher)
 
 	mysqlDsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8&parseTime=True&loc=Local",
 		config.MySql.UserName,

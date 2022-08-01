@@ -54,6 +54,10 @@ func (o *Owner) Conn() *Connection {
 	return o.conn
 }
 
+func (o *Owner) OnLogin() {
+	//playListService.GetCurrentSongs()
+}
+
 func (o *Owner) stop() {
 	o.conn.Close()
 	connPool := global.GetGlobalObject(global.KeyConnPool).(*Pool)

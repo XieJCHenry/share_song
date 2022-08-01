@@ -36,6 +36,7 @@ func (s *service) Connect(connKey string, w http.ResponseWriter, r *http.Request
 		}
 		con := wbsocket.NewJsonConnection(s.logger, c)
 		owner := wbsocket.NewOwner(connKey, con)
+		owner.OnLogin() // todo 在登录时推送一次当前的播放状态
 		connPool.Add(connKey, owner)
 		go owner.Run()
 	}

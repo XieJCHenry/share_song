@@ -2,6 +2,8 @@ package play_list
 
 import (
 	"math"
+	"share_song/global"
+	logger2 "share_song/logger"
 	"share_song/music"
 	"sync"
 	"sync/atomic"
@@ -23,6 +25,7 @@ const (
 
 type PlayStatus string
 type PlayMode string
+
 const (
 	StatusPlaying PlayStatus = "playing"
 	StatusPaused  PlayStatus = "paused"
@@ -35,18 +38,23 @@ type PlayList struct {
 	list        []*music.Song
 	curPlaySong *currentPlaying // start from 0
 
-	status int32
-	mode   PlayMode
-	mtx    sync.Mutex
-	playChan chan struct{}
-	pauseChan chan struct{}
+	status      int32
+	mode        PlayMode
+	mtx         sync.Mutex
+	playChan    chan struct{}
+	pauseChan   chan struct{}
+	CurrentChan chan *music.Song
 }
 
 func NewPlayList() *PlayList {
 	pList := &PlayList{
 		list:        make([]*music.Song, 0),
 		status:      pause,
+		mode:        ModeLoop,
 		mtx:         sync.Mutex{},
+		playChan:    make(chan struct{}, 1),
+		pauseChan:   make(chan struct{}, 1),
+		CurrentChan: make(chan *music.Song),
 	}
 	curPlay := NewCurrentPlaying(0, pList)
 	pList.curPlaySong = curPlay
@@ -108,41 +116,68 @@ func (p *PlayList) SetNext(song *music.Song) {
 }
 
 func (p *PlayList) PlayNext() {
-	p.playChan <- struct{}{}
-}
+	logger := global.GetGlobalObject(global.KeyLogger).(*logger2.Logger)
 
-func (p *PlayList) StartPlay() {
-	if atomic.LoadInt32(&p.status) != play {
+	if atomic.LoadInt32(&p.status) == play {
 		p.mtx.Lock()
-		if atomic.LoadInt32(&p.status) != play {
-			{
-				p.PlayNext()
-				go p.playLoop()
-			}
+		if atomic.LoadInt32(&p.status) == play {
+			p.curPlaySong.reset()
+			logger.Sugared().Infof("song play next")
+			p.playChan <- struct{}{}
 		}
 		p.mtx.Unlock()
 	}
 }
 
-func (p *PlayList) SetPause() {
-	p.pauseChan <- struct{}{}
+func (p *PlayList) StartPlay() (*music.Song, int) {
+
+	wg := sync.WaitGroup{}
+
+	if len(p.list) > 0 {
+		if atomic.LoadInt32(&p.status) != play {
+			p.mtx.Lock()
+			if atomic.LoadInt32(&p.status) != play {
+				{
+					wg.Add(1)
+					go p.playLoop(&wg)
+				}
+			}
+			p.mtx.Unlock()
+		}
+	}
+
+	wg.Wait()
+	return p.GetCurrentPlay()
 }
 
-func (p *PlayList) playLoop() {
+func (p *PlayList) SetPause() {
+	logger := global.GetGlobalObject(global.KeyLogger).(*logger2.Logger)
+	if atomic.CompareAndSwapInt32(&p.status, play, pause) {
+		logger.Sugared().Infof("song pause")
+		p.pauseChan <- struct{}{}
+	}
+}
+
+func (p *PlayList) playLoop(wg *sync.WaitGroup) {
 	// playChan 接收信号则播放
 	// pauseChan 接收信号则暂停
 
+	logger := global.GetGlobalObject(global.KeyLogger).(*logger2.Logger)
+
 	for {
 		select {
-		case <- p.pauseChan:
+		case <-p.pauseChan:
 			{
+				logger.Sugared().Debugf("pause chan signal")
 				if atomic.CompareAndSwapInt32(&p.status, play, pause) {
+					logger.Sugared().Infof("status swap from play to pause")
 					p.curPlaySong.pause()
 				}
 			}
-		case <- p.playChan:
+		case <-p.playChan:
 			{
 				if atomic.CompareAndSwapInt32(&p.status, pause, play) {
+					logger.Sugared().Infof("status swap from pause to play")
 				}
 
 				p.mtx.Lock()
@@ -154,22 +189,38 @@ func (p *PlayList) playLoop() {
 				if p.mode == ModeLoop {
 					current = (p.curPlaySong.Pos) % len(p.list)
 				} else if p.mode == ModeSequence {
-					current = int(math.Min(float64(p.curPlaySong.Pos), float64(len(p.list) - 1)))
+					current = int(math.Min(float64(p.curPlaySong.Pos), float64(len(p.list)-1)))
 				}
 				currentSong := p.list[current]
+				logger.Sugared().Infof("currentSong is %v", currentSong)
 				p.mtx.Unlock()
 
 				p.curPlaySong.length = currentSong.Length
+				p.curPlaySong.Pos = current
 				p.curPlaySong.start()
+				p.CurrentChan <- currentSong
 			}
 		default:
-			{}
+			{
+				if atomic.CompareAndSwapInt32(&p.status, pause, play) {
+					p.mtx.Lock()
+
+					logger.Sugared().Debugf("send start signal at default")
+					p.playChan <- struct{}{}
+					wg.Done()
+
+					p.mtx.Unlock()
+				}
+			}
 		}
 	}
 }
 
 func (p *PlayList) GetCurrentPlay() (*music.Song, int) {
 	curPlaySong := p.curPlaySong
+	if curPlaySong.Pos < 0 || len(p.list) <= 0 {
+		return nil, -1
+	}
 	song := p.list[curPlaySong.Pos]
 	return song, curPlaySong.Pos
 }
