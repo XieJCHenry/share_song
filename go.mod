@@ -5,17 +5,12 @@ go 1.18
 require (
 	github.com/gin-gonic/gin v1.8.1
 	github.com/google/uuid v1.3.0
+	github.com/gorilla/websocket v1.5.0
 	go.mongodb.org/mongo-driver v1.9.1
 	go.uber.org/zap v1.21.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	gorm.io/driver/mysql v1.3.4
 	gorm.io/gorm v1.23.7
-)
-
-require (
-	github.com/gorilla/websocket v1.5.0 // indirect
-	github.com/samber/lo v1.25.0 // indirect
-	golang.org/x/exp v0.0.0-20220303212507-bbda1eaf7a17 // indirect
 )
 
 require (
@@ -43,7 +38,7 @@ require (
 	github.com/xdg-go/scram v1.0.2 // indirect
 	github.com/xdg-go/stringprep v1.0.2 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d // indirect
-	go.uber.org/atomic v1.9.0 // indirect
+	go.uber.org/atomic v1.9.0
 	go.uber.org/multierr v1.8.0 // indirect
 	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97 // indirect
 	golang.org/x/net v0.0.0-20210405180319-a5a99cb37ef4 // indirect

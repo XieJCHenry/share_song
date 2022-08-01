@@ -9,15 +9,17 @@ import (
 	"share_song/music/music_library"
 	"share_song/protocol"
 	"share_song/user"
-	"share_song/utils/collection/set"
+	_set "share_song/utils/collection/set"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
-// todo 整合 websocket服务
-// 对歌单进行操作后，若歌单发生变动，则需通知全部connections
 // todo 需要实现“播放”逻辑，每一首曲子播放完后要更新playList的current
+
+var (
+	songSearchFields = []string{"instance_id", "name", "artists", "length"}
+)
 
 type service struct {
 	logger         *zap.SugaredLogger
@@ -57,17 +59,16 @@ func (s *service) addSongsV1(ctx *gin.Context, userId string, songIds []string) 
 		return nil, fmt.Errorf("未知连接，禁止操作")
 	}
 
-	fields := []string{"instance_id", "name", "artists"}
 	query := map[string]interface{}{
 		"instance_id": songIds,
 	}
-	songs, err := s.libraryService.SearchSongByCondition(fields, query, 1, 3000)
+	songs, err := s.libraryService.SearchSongByCondition(songSearchFields, query, 1, 3000)
 	if err != nil {
 		s.logger.Errorf("search songs failed, err=%s", err)
 		return nil, fmt.Errorf("查找歌曲失败，错误：%s", err)
 	}
 
-	songSet := set.NewSetWith[string](songIds...)
+	songSet := _set.NewSetWith[string](songIds...)
 
 	var remainSongs []music.Song
 	for _, song := range songs {
@@ -102,11 +103,10 @@ func getConnectionKey(ctx *gin.Context) string {
 
 func (s *service) SetNextPlay(ctx *gin.Context, userId string, songId string) ([]music.Song, error) {
 
-	fields := []string{"instance_id", "name", "artists", "length"}
 	query := map[string]interface{}{
 		"instance_id": songId,
 	}
-	songs, err := s.libraryService.SearchSongByCondition(fields, query, 1, 1)
+	songs, err := s.libraryService.SearchSongByCondition(songSearchFields, query, 1, 1)
 	if err != nil {
 		s.logger.Errorf("search songs failed, err=%s", err)
 		return nil, fmt.Errorf("查找歌曲失败，错误：%s", err)
@@ -203,6 +203,48 @@ func (s *service) GetCurrentSongs(ctx context.Context) ([]music.Song, error) {
 	}
 
 	return result, nil
+}
+
+func (s *service) SetPause(ctx *gin.Context, userId string) error {
+	connPool := global.GetGlobalObject(global.KeyConnPool).(*wbsocket.Pool)
+
+	s.playList.SetPause()
+
+	connPool.ForEach(func(o *wbsocket.Owner) error {
+		err := o.Conn().WriteMessage(protocol.Protocol{
+			Body: map[string]interface{}{
+				"key":   o.Key(),
+				"playStatus": StatusPaused,
+			},
+		})
+		return err
+	})
+	return nil
+}
+
+func (s *service) StartPlay(ctx *gin.Context, userId string) (*music.Song, int, error) {
+	connPool := global.GetGlobalObject(global.KeyConnPool).(*wbsocket.Pool)
+
+	s.playList.StartPlay()
+	currentPlay, pos := s.playList.GetCurrentPlay()
+
+	connPool.ForEach(func(o *wbsocket.Owner) error {
+		if o.Key() != userId {
+			err := o.Conn().WriteMessage(protocol.Protocol{
+				Body: map[string]interface{}{
+					"key":   o.Key(),
+					"playStatus": StatusPlaying,
+					"current": map[string]interface{}{
+						"instance_id": currentPlay.InstanceId,
+						"pos": pos,
+					},
+				},
+			})
+			return err
+		}
+		return nil
+	})
+	return currentPlay, pos, nil
 }
 
 func (s *service) searchOnlineUserByInstanceId(ctx context.Context, userId string) (*user.User, error) {

@@ -1,34 +1,44 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"share_song/music/music_library"
-	"share_song/music/play_list"
-
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
-	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	mysql2 "share_song/database/mysql"
+	"share_song/global"
+	"share_song/hello"
+	"share_song/internal/wbsocket"
+	logger2 "share_song/logger"
+	"share_song/music/music_library"
+	"share_song/music/play_list"
+	"share_song/music/play_list_v2"
+	"share_song/protocol"
+	"share_song/user_v2"
 )
 
 func main() {
-	Main2()
-}
-
-func Main1() {
 	config, err := loadConfig()
 	if err != nil {
 		panic(fmt.Sprintf("load config failed, err=%s", err.Error()))
 	}
 
-	//ctx := context.Background()
+	global.Init()
+
+	e := gin.Default()
+
+	ctx := context.Background()
+	_ = ctx
 	zapLog, err := zap.NewDevelopment()
 	if err != nil {
 		return
 	}
-	logger := zapLog.Sugar()
+	logger := logger2.New(zapLog.Sugar())
 
-	e := gin.Default()
+	routeDispatcher := protocol.NewDispatcher()
+	hello.Register(routeDispatcher)
+	play_list_v2.Register(routeDispatcher)
 
 	mysqlDsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8&parseTime=True&loc=Local",
 		config.MySql.UserName,
@@ -38,27 +48,32 @@ func Main1() {
 		config.MySql.DataBase,
 	)
 	mysqlDb, err := gorm.Open(mysql.Open(mysqlDsn))
+	_ = mysqlDb
 	if err != nil {
 		panic(fmt.Sprintf("connect mysql failed, err=%s", err))
 	}
+	mysqlClient := mysql2.NewClient(logger.Sugared(), mysqlDb)
 
-	//mongoDsn := fmt.Sprintf("mongodb://%s:%d", config.Mongo.Host, config.Mongo.Port)
-	//mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoDsn))
-	//if err != nil {
-	//	panic(fmt.Sprintf("connect mongo failed, err=%s", err))
-	//}
+	connPool := wbsocket.NewConnectionPool(logger.Sugared())
 
-	//userService := user.NewService(logger, mysqlDb, mongoClient)
-	//userController := user.NewController(logger, userService)
-	//userController.Register(e)
+	global.SetGlobalObject(logger)
+	global.SetGlobalObject(routeDispatcher)
+	global.SetGlobalObject(mysqlClient)
+	global.SetGlobalObject(connPool)
 
-	musicLibraryService := music_library.NewMusicLibraryService(logger, mysqlDb)
-	musicLibraryController := music_library.NewController(logger, musicLibraryService)
+	userServiceV2 := user_v2.NewUserServiceV2(logger.Sugared())
+	userController := user_v2.NewController(userServiceV2)
+	userController.Register(e)
+
+	musicLibraryService := music_library.NewMusicLibraryService(logger.Sugared(), mysqlDb)
+	musicLibraryController := music_library.NewController(logger.Sugared(), musicLibraryService)
 	musicLibraryController.Register(e)
 
-	playerListService := play_list.NewService(logger, nil, musicLibraryService)
-	playListController := play_list.NewController(logger, playerListService)
+	playListService := play_list.NewService(logger.Sugared(), nil, musicLibraryService)
+	playListController := play_list.NewController(logger.Sugared(), playListService)
 	playListController.Register(e)
+
+	global.SetGlobalObject(playListService)
 
 	e.Run(":8874")
 }
