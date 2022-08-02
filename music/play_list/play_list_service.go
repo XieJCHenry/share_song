@@ -207,60 +207,21 @@ func (s *service) GetCurrentSongs(ctx context.Context) ([]music.Song, error) {
 }
 
 func (s *service) SetPause(ctx *gin.Context, userId string) error {
-	connPool := global.GetGlobalObject(global.KeyConnPool).(*wbsocket.Pool)
-
 	s.playList.SetPause()
-
-	connPool.ForEach(func(o *wbsocket.Owner) error {
-		err := o.Conn().WriteMessage(protocol.Protocol{
-			Body: map[string]interface{}{
-				"key":        o.Key(),
-				"path":       PathSetPause,
-				"playStatus": StatusPaused,
-			},
-		})
-		return err
-	})
+	s.logger.Debugf("pause by user %s", userId)
 	return nil
 }
 
 func (s *service) StartPlay(ctx *gin.Context, userId string) (*music.Song, int, error) {
-	connPool := global.GetGlobalObject(global.KeyConnPool).(*wbsocket.Pool)
-
-	var currentPlay *music.Song
-	var pos = -1
-
-	// todo 需要测试正确性
-	go func() {
-		for {
-			select {
-			case curPlaySong := <-s.playList.CurrentChan:
-				pos = s.playList.curPlaySong.Pos
-				if curPlaySong != nil && pos >= 0 {
-					connPool.ForEach(func(o *wbsocket.Owner) error {
-						err := o.Conn().WriteMessage(protocol.Protocol{
-							Body: map[string]interface{}{
-								"key":        o.Key(),
-								"path":       PathStartPlay,
-								"playStatus": StatusPlaying,
-								"current": map[string]interface{}{
-									"instance_id": currentPlay.InstanceId,
-									"pos":         pos,
-								},
-							},
-						})
-						return err
-					})
-				}
-			}
-		}
-	}()
-
-	s.playList.StartPlay()
-
-	s.logger.Debugf("current is %v, pos = %d", currentPlay, pos)
-
+	currentPlay, pos := s.playList.StartPlay()
+	s.logger.Debugf("start by user %s, current is %v, pos = %d", userId, currentPlay, pos)
 	return currentPlay, pos, nil
+}
+
+func (s *service) GetCurrentStatus(ctx *gin.Context) (*music.Song, int, PlayStatus, error) {
+	currentSong, pos, playStatus := s.playList.GetCurrentStatus()
+	s.logger.Debugf("current status %s, song %s, pos %d", playStatus, currentSong, pos)
+	return currentSong, pos, playStatus, nil
 }
 
 func (s *service) searchOnlineUserByInstanceId(ctx context.Context, userId string) (*user.User, error) {

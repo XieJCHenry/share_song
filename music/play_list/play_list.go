@@ -3,8 +3,10 @@ package play_list
 import (
 	"math"
 	"share_song/global"
+	"share_song/internal/wbsocket"
 	logger2 "share_song/logger"
 	"share_song/music"
+	"share_song/protocol"
 	"sync"
 	"sync/atomic"
 )
@@ -25,6 +27,7 @@ const (
 
 type PlayStatus string
 type PlayMode string
+type Action string
 
 const (
 	StatusPlaying PlayStatus = "playing"
@@ -38,23 +41,21 @@ type PlayList struct {
 	list        []*music.Song
 	curPlaySong *currentPlaying // start from 0
 
-	status      int32
-	mode        PlayMode
-	mtx         sync.Mutex
-	playChan    chan struct{}
-	pauseChan   chan struct{}
-	CurrentChan chan *music.Song
+	status    int32
+	mode      PlayMode
+	mtx       sync.Mutex
+	playChan  chan struct{}
+	pauseChan chan struct{}
 }
 
 func NewPlayList() *PlayList {
 	pList := &PlayList{
-		list:        make([]*music.Song, 0),
-		status:      pause,
-		mode:        ModeLoop,
-		mtx:         sync.Mutex{},
-		playChan:    make(chan struct{}, 1),
-		pauseChan:   make(chan struct{}, 1),
-		CurrentChan: make(chan *music.Song),
+		list:      make([]*music.Song, 0),
+		status:    pause,
+		mode:      ModeLoop,
+		mtx:       sync.Mutex{},
+		playChan:  make(chan struct{}, 1),
+		pauseChan: make(chan struct{}, 1),
 	}
 	curPlay := NewCurrentPlaying(0, pList)
 	pList.curPlaySong = curPlay
@@ -107,7 +108,7 @@ func (p *PlayList) SetNext(song *music.Song) {
 	defer p.mtx.Unlock()
 
 	currentPos := p.curPlaySong.Pos
-	if currentPos >= len(p.list) || currentPos < 0 {
+	if currentPos >= len(p.list) {
 		p.list = append(p.list, song)
 	} else {
 		newSlice := append([]*music.Song{song}, p.list[currentPos+1:]...)
@@ -172,6 +173,7 @@ func (p *PlayList) playLoop(wg *sync.WaitGroup) {
 				if atomic.CompareAndSwapInt32(&p.status, play, pause) {
 					logger.Sugared().Infof("status swap from play to pause")
 					p.curPlaySong.pause()
+					p.onPause()
 				}
 			}
 		case <-p.playChan:
@@ -181,24 +183,27 @@ func (p *PlayList) playLoop(wg *sync.WaitGroup) {
 				}
 
 				p.mtx.Lock()
-				if p.curPlaySong.Pos < 0 {
-					p.curPlaySong.Pos++
-					p.curPlaySong.PlayOffset = 0
-				}
-				var current int
-				if p.mode == ModeLoop {
-					current = (p.curPlaySong.Pos) % len(p.list)
-				} else if p.mode == ModeSequence {
-					current = int(math.Min(float64(p.curPlaySong.Pos), float64(len(p.list)-1)))
-				}
-				currentSong := p.list[current]
-				logger.Sugared().Infof("currentSong is %v", currentSong)
-				p.mtx.Unlock()
+				p.curPlaySong.Pos++
+				p.curPlaySong.PlayOffset = 0
 
-				p.curPlaySong.length = currentSong.Length
-				p.curPlaySong.Pos = current
-				p.curPlaySong.start()
-				p.CurrentChan <- currentSong
+				if p.curPlaySong.Pos >= len(p.list) && p.mode == ModeSequence {
+					p.SetPause()
+				} else {
+					var current int
+					if p.mode == ModeLoop {
+						current = (p.curPlaySong.Pos) % len(p.list)
+					} else if p.mode == ModeSequence {
+						current = int(math.Min(float64(p.curPlaySong.Pos), float64(len(p.list)-1)))
+					}
+					currentSong := p.list[current]
+					logger.Sugared().Infof("currentSong is %v", currentSong)
+					p.mtx.Unlock()
+
+					p.curPlaySong.length = currentSong.Length
+					p.curPlaySong.Pos = current
+					p.curPlaySong.start()
+					p.onPlay()
+				}
 			}
 		default:
 			{
@@ -223,4 +228,48 @@ func (p *PlayList) GetCurrentPlay() (*music.Song, int) {
 	}
 	song := p.list[curPlaySong.Pos]
 	return song, curPlaySong.Pos
+}
+
+func (p *PlayList) GetCurrentStatus() (*music.Song, int, PlayStatus) {
+	curSong, pos := p.GetCurrentPlay()
+	if p.status == play {
+		return curSong, pos, StatusPlaying
+	} else {
+		return nil, -1, StatusPaused
+	}
+}
+
+func (p *PlayList) onPlay() {
+	connPool := global.GetGlobalObject(global.KeyConnPool).(*wbsocket.Pool)
+	currentSong, pos := p.GetCurrentPlay()
+	if currentSong != nil && pos >= 0 {
+		connPool.ForEach(func(o *wbsocket.Owner) error {
+			err := o.Conn().WriteMessage(protocol.Protocol{
+				Body: map[string]interface{}{
+					"key":        o.Key(),
+					"path":       PathStartPlay,
+					"playStatus": StatusPlaying,
+					"current": map[string]interface{}{
+						"instance_id": currentSong.InstanceId,
+						"pos":         pos,
+					},
+				},
+			})
+			return err
+		})
+	}
+}
+
+func (p *PlayList) onPause() {
+	connPool := global.GetGlobalObject(global.KeyConnPool).(*wbsocket.Pool)
+	connPool.ForEach(func(o *wbsocket.Owner) error {
+		err := o.Conn().WriteMessage(protocol.Protocol{
+			Body: map[string]interface{}{
+				"key":        o.Key(),
+				"path":       PathSetPause,
+				"playStatus": StatusPaused,
+			},
+		})
+		return err
+	})
 }

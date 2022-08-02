@@ -7,14 +7,16 @@ import (
 )
 
 const (
-	PathCurrentList string = "/play_list_v2/api/v1/current_list"
-	PathSetNext     string = "/play_list_v2/api/v1/set_next"
-	PathStartPlay   string = "/play_list_v2/api/v1/start_play"
-	PathSetPause    string = "/play_list_v2/api/v1/set_pause"
+	PathCurPlayList   string = "/play_list_v2/api/v1/current_list"
+	PathSetNext       string = "/play_list_v2/api/v1/set_next"
+	PathStartPlay     string = "/play_list_v2/api/v1/start_play"
+	PathSetPause      string = "/play_list_v2/api/v1/set_pause"
+	PathCurrentStatus string = "/play_list_v2/api/v1/current_status"
 )
 
 func Register(dispatcher *protocol.Dispatcher) {
-	dispatcher.Register(PathCurrentList, GetCurrentList)
+	dispatcher.Register(PathCurPlayList, GetCurrentList)
+	dispatcher.Register(PathCurrentStatus, GetCurrentStatus)
 	dispatcher.Register(PathSetNext, SetNextPlay)
 	dispatcher.Register(PathStartPlay, StartPlay)
 	dispatcher.Register(PathSetPause, SetPause)
@@ -96,11 +98,32 @@ func GetCurrentList(pro *protocol.Protocol) (map[string]interface{}, error) {
 	}
 
 	return map[string]interface{}{
-		"path":  PathCurrentList,
+		"path":  PathCurPlayList,
 		"key":   userId,
 		"songs": songs,
 	}, nil
+}
 
+func GetCurrentStatus(pro *protocol.Protocol) (map[string]interface{}, error) {
+	playListService := global.GetGlobalObject(global.KeyPlayListService).(PlayerListService)
+	logger := global.GetGlobalObject(global.KeyLogger).(*logger2.Logger)
+
+	userId := pro.Body["userId"].(string)
+	song, pos, playStatus, err := playListService.GetCurrentStatus(nil)
+	if err != nil {
+		logger.Sugared().Errorf("get current status failed, err=%s", err)
+		return wrapperError(err)
+	}
+
+	return map[string]interface{}{
+		"path": PathCurrentStatus,
+		"key":  userId,
+		"status": map[string]interface{}{
+			"status":      playStatus,
+			"currentSong": song,
+			"pos":         pos,
+		},
+	}, nil
 }
 
 func wrapperError(err error) (map[string]interface{}, error) {

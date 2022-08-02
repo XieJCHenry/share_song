@@ -13,6 +13,7 @@ type PlayerListService interface {
 	AddSongs(ctx *gin.Context, userId string, songIds []string) ([]music.Song, error)
 	RemoveSongs(ctx *gin.Context, userId string, songIds []string) ([]music.Song, error)
 	GetCurrentSongs(ctx context.Context) ([]music.Song, error)
+	GetCurrentStatus(ctx *gin.Context) (*music.Song, int, PlayStatus, error)
 
 	SetNextPlay(ctx *gin.Context, userId string, songId string) ([]music.Song, error)
 	SetPause(ctx *gin.Context, userId string) error

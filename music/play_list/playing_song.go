@@ -76,7 +76,6 @@ func (c *currentPlaying) start() {
 }
 
 func (c *currentPlaying) reset() {
-	c.Pos = -1
 	c.length = 0
 	c.PlayOffset = 0
 }

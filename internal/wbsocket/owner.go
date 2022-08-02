@@ -23,6 +23,9 @@ func (o *Owner) Run() error {
 	logger := global.GetGlobalObject(global.KeyLogger).(*logger2.Logger).Sugared()
 
 	defer func() {
+		if err := recover(); err != nil {
+			logger.Errorf("connection closed, panic recover on %s", err)
+		}
 		logger.Infof("websocket close %s", o.key)
 		o.stop()
 	}()
@@ -52,10 +55,6 @@ func (o *Owner) Key() string {
 
 func (o *Owner) Conn() *Connection {
 	return o.conn
-}
-
-func (o *Owner) OnLogin() {
-	//playListService.GetCurrentSongs()
 }
 
 func (o *Owner) stop() {
