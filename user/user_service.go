@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"share_song/internal/wbsocket"
 	"share_song/utils/uuid"
 	"sync"
@@ -19,6 +20,8 @@ const (
 
 	MongoDbName  = "share_song"
 	MongoColName = "user_song_operation"
+
+	phoneRegex = "^1(3\\d|4[5-9]|5[0-35-9]|6[2567]|7[0-8]|8\\d|9[0-35-9])\\d{8}$"
 )
 
 type service struct {
@@ -156,8 +159,7 @@ func (s *service) trulyLogOut(ctx context.Context, userId string) {
 func (s *service) RegisterAccount(ctx context.Context, userName string, phone string) (*User, error) {
 	// check exists
 	tbl := s.mysql.Table(MySqlTableName)
-	var selectFields []string
-	selectFields = append(selectFields, "instance_id")
+	selectFields := []string{"instance_id"}
 	if len(userName) > 0 {
 		tbl.Where("name = ?", userName)
 		selectFields = append(selectFields, "name")
@@ -167,8 +169,8 @@ func (s *service) RegisterAccount(ctx context.Context, userName string, phone st
 		selectFields = append(selectFields, "phone")
 	}
 
-	var selectedUsers []*User // todo 需要注意是否允许指针
-	searchResult := tbl.Select(selectFields).Find(selectedUsers)
+	var selectedUsers []UserDto
+	searchResult := s.mysql.Table(MySqlTableName).Select(selectFields).Find(selectedUsers)
 	err := searchResult.Error
 	if err != nil {
 		s.logger.Errorf("check user is existed failed, err=%s", err)
@@ -184,7 +186,7 @@ func (s *service) RegisterAccount(ctx context.Context, userName string, phone st
 	}
 
 	// create new
-	newUser := &User{
+	newUser := &UserDto{
 		InstanceId: uuid.GenerateWithLength(uuid.InstanceIdLength),
 		Name:       userName,
 		Phone:      phone,
@@ -195,7 +197,11 @@ func (s *service) RegisterAccount(ctx context.Context, userName string, phone st
 		return nil, fmt.Errorf("创建用户错误，err=%s", result.Error.Error())
 	}
 	s.logger.Infof("new user register %s(%s)", userName, newUser.InstanceId)
-	return newUser, nil
+	return &User{
+		InstanceId: uuid.GenerateWithLength(uuid.InstanceIdLength),
+		Name:       userName,
+		Phone:      phone,
+	}, nil
 }
 
 func (s *service) CancelAccount(ctx context.Context, instanceId, userName, phone string) error {
@@ -294,4 +300,41 @@ func validateSearchQuery(query map[string]interface{}) bool {
 		return true
 	}
 	return false
+}
+
+func (s *service) GetOnlineToken(ctx context.Context, loginKey string) (string, error) {
+
+	tbl := s.mysql.Table(MySqlTableName).Select([]string{"instance_id", "name", "phone"})
+
+	isPhone, err := checkIsPhone(loginKey)
+	if err != nil {
+		return "", fmt.Errorf("请输入正确的用户名或手机号")
+	}
+	if isPhone {
+		tbl.Where("phone = ?", loginKey)
+	} else {
+		tbl.Where("name = ?", loginKey)
+
+	}
+
+	user := &UserDto{}
+	result := tbl.First(user)
+	if result.Error != nil {
+		s.logger.Errorf("login check user exists failed, err=%s", result.Error)
+		return "", fmt.Errorf("数据库查询用户错误：%s", result.Error.Error())
+	}
+	return user.InstanceId, nil
+}
+
+func checkIsPhone(key string) (bool, error) {
+	pattern, err := regexp.Compile(phoneRegex)
+	if err != nil {
+		return false, err
+	}
+	if len(key) == 13 {
+		if pattern.MatchString(key) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

@@ -182,13 +182,14 @@ func (p *PlayList) playLoop(wg *sync.WaitGroup) {
 					logger.Sugared().Infof("status swap from pause to play")
 				}
 
-				p.mtx.Lock()
 				p.curPlaySong.Pos++
 				p.curPlaySong.PlayOffset = 0
 
 				if p.curPlaySong.Pos >= len(p.list) && p.mode == ModeSequence {
 					p.SetPause()
 				} else {
+
+					p.mtx.Lock()
 					var current int
 					if p.mode == ModeLoop {
 						current = (p.curPlaySong.Pos) % len(p.list)
@@ -245,9 +246,9 @@ func (p *PlayList) onPlay() {
 	if currentSong != nil && pos >= 0 {
 		connPool.ForEach(func(o *wbsocket.Owner) error {
 			err := o.Conn().WriteMessage(protocol.Protocol{
+				Path: PathStartPlay,
 				Body: map[string]interface{}{
 					"key":        o.Key(),
-					"path":       PathStartPlay,
 					"playStatus": StatusPlaying,
 					"current": map[string]interface{}{
 						"instance_id": currentSong.InstanceId,
@@ -264,9 +265,9 @@ func (p *PlayList) onPause() {
 	connPool := global.GetGlobalObject(global.KeyConnPool).(*wbsocket.Pool)
 	connPool.ForEach(func(o *wbsocket.Owner) error {
 		err := o.Conn().WriteMessage(protocol.Protocol{
+			Path: PathSetPause,
 			Body: map[string]interface{}{
 				"key":        o.Key(),
-				"path":       PathSetPause,
 				"playStatus": StatusPaused,
 			},
 		})

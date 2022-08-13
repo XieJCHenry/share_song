@@ -28,7 +28,7 @@ func (c *Controller) Login(ctx *gin.Context) {
 
 	user, err := c.service.Login(ctx.Request.Context(), req.UserName, req.Phone)
 	if err != nil {
-		ctx.JSON(5000, gin.H{"error": err.Error()})
+		ctx.JSON(500, gin.H{"error": err.Error()})
 	} else {
 		ctx.JSON(200, &LoginResponse{
 			InstanceId: user.InstanceId,
@@ -49,7 +49,7 @@ func (c *Controller) Logout(ctx *gin.Context) {
 
 	err = c.service.Logout(ctx.Request.Context(), req.InstanceId, req.UserName)
 	if err != nil {
-		ctx.JSON(5000, gin.H{"error": err.Error()})
+		ctx.JSON(500, gin.H{"error": err.Error()})
 	} else {
 		ctx.JSON(200, &LogoutResponse{
 			InstanceId: req.InstanceId,
@@ -68,7 +68,7 @@ func (c *Controller) RegisterAccount(ctx *gin.Context) {
 
 	user, err := c.service.RegisterAccount(ctx.Request.Context(), req.UserName, req.Phone)
 	if err != nil {
-		ctx.JSON(5000, gin.H{"error": err.Error()})
+		ctx.JSON(500, gin.H{"error": err.Error()})
 		return
 	} else {
 		ctx.JSON(200, &RegisterAccountResponse{
@@ -89,7 +89,7 @@ func (c *Controller) CancelAccount(ctx *gin.Context) {
 
 	err = c.service.CancelAccount(ctx.Request.Context(), req.InstanceId, req.UserName, req.Phone)
 	if err != nil {
-		ctx.JSON(5000, gin.H{"error": err.Error()})
+		ctx.JSON(500, gin.H{"error": err.Error()})
 	} else {
 		ctx.JSON(200, &CancelAccountResponse{
 			InstanceId: req.InstanceId,
@@ -107,11 +107,25 @@ func (c *Controller) SearchOnlineUsers(ctx *gin.Context) {
 
 	users, err := c.service.SearchOnlineUsers(ctx.Request.Context(), req.Query, req.WithTimeOut)
 	if err != nil {
-		ctx.JSON(5000, gin.H{"error": err.Error()})
+		ctx.JSON(500, gin.H{"error": err.Error()})
 	} else {
 		ctx.JSON(200, &SearchOnlineUsersResponse{
 			WithTimeOut: req.WithTimeOut,
 			Users:       users,
+		})
+	}
+}
+
+func (c *Controller) GetOnlineToken(ctx *gin.Context) {
+	loginKey := ctx.Query("login-key")
+	onlineToken, err := c.service.GetOnlineToken(ctx.Request.Context(), loginKey)
+	if err != nil {
+		ctx.JSON(500, gin.H{"error": err.Error()})
+		return
+	} else {
+		ctx.JSON(200, gin.H{
+			"loginKey":    loginKey,
+			"onlineToken": onlineToken,
 		})
 	}
 }

@@ -1,8 +1,15 @@
 package user
 
+type UserDto struct {
+	// mysql fields
+	InstanceId string `json:"instance_id,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Phone      string `json:"phone,omitempty"`
+}
+
 type User struct {
 	// mysql fields
-	InstanceId string `json:"instanceId,omitempty" bson:"user_id"`
+	InstanceId string `json:"instance_id,omitempty"`
 	Name       string `json:"name,omitempty"`
 	Phone      string `json:"phone,omitempty"`
 

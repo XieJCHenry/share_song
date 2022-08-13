@@ -13,4 +13,5 @@ type Service interface {
 
 	// websocket
 	//GetOnlineClient()
+	GetOnlineToken(ctx context.Context, loginKey string) (string, error)
 }

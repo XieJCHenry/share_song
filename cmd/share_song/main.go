@@ -11,6 +11,7 @@ import (
 	"share_song/music/music_library"
 	"share_song/music/play_list"
 	"share_song/protocol"
+	"share_song/user"
 	"share_song/user_v2"
 
 	"github.com/gin-gonic/gin"
@@ -40,6 +41,7 @@ func main() {
 	routeDispatcher := protocol.NewDispatcher()
 	hello.Register(routeDispatcher)
 	play_list.Register(routeDispatcher)
+	user_v2.Register(routeDispatcher)
 
 	mysqlDsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8&parseTime=True&loc=Local",
 		config.MySql.UserName,
@@ -62,9 +64,13 @@ func main() {
 	global.SetGlobalObject(mysqlClient)
 	global.SetGlobalObject(connPool)
 
-	userServiceV2 := user_v2.NewUserServiceV2(logger.Sugared())
-	userController := user_v2.NewController(userServiceV2)
+	userService := user.NewService(logger.Sugared(), mysqlDb, nil)
+	userController := user.NewController(logger.Sugared(), userService)
 	userController.Register(e)
+
+	userServiceV2 := user_v2.NewUserServiceV2(logger.Sugared())
+	userControllerV2 := user_v2.NewController(userServiceV2)
+	userControllerV2.Register(e)
 
 	musicLibraryService := music_library.NewMusicLibraryService(logger.Sugared(), mysqlDb)
 	musicLibraryController := music_library.NewController(logger.Sugared(), musicLibraryService)
